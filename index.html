@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TransferDocs Pro Auto Cleanup</title>
+
+<link rel="apple-touch-icon" href="transferdocs.png">
+<link rel="icon" type="image/png" href="transferdocs.png">
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+<style>
+body{
+background:linear-gradient(to bottom right,#dbeafe,#eff6ff);
+font-family:Arial,sans-serif;
+}
+.card{
+background:white;
+border-radius:24px;
+padding:24px;
+box-shadow:0 10px 25px rgba(0,0,0,0.08);
+}
+.input{
+width:100%;
+padding:14px;
+border-radius:16px;
+border:1px solid #bfdbfe;
+}
+</style>
+</head>
+
+<body class="min-h-screen p-5">
+
+<div class="max-w-7xl mx-auto">
+
+<div class="card mb-6">
+
+<div class="flex items-center gap-4">
+
+<img src="transferdocs.png"
+class="w-20 h-20 rounded-2xl object-cover">
+
+<div>
+<h1 class="text-4xl font-bold text-blue-900">
+📁 TransferDocs Pro
+</h1>
+
+<p class="text-gray-600 mt-2">
+24-Hour Auto Cleanup Secure Transfer System
+</p>
+</div>
+
+</div>
+
+</div>
+
+<div class="grid lg:grid-cols-2 gap-6">
+
+<div class="card">
+
+<h2 class="text-2xl font-bold text-blue-900 mb-5">
+Send Documents
+</h2>
+
+<div class="space-y-4">
+
+<input id="fileInput" type="file" multiple class="input">
+
+<div id="dropZone"
+class="border-2 border-dashed border-blue-300 rounded-2xl p-8 text-center text-gray-500">
+Drag & Drop Files Here
+</div>
+
+<button onclick="uploadFiles()"
+class="bg-blue-700 text-white rounded-2xl p-4 w-full font-bold text-lg">
+Upload & Generate Code
+</button>
+
+<div class="w-full bg-gray-200 rounded-full h-4">
+<div id="progressBar"
+class="bg-blue-600 h-4 rounded-full"
+style="width:0%">
+</div>
+</div>
+
+<div id="uploadStatus" class="text-sm text-gray-700"></div>
+<div id="selectedFiles"
+class="mt-4 space-y-2 text-sm text-gray-700"></div>
+
+
+<div id="generatedCode"
+class="hidden bg-blue-50 border border-blue-200 rounded-2xl p-5 mt-4">
+
+<div class="text-blue-900 font-bold text-lg mb-3">
+Transfer Code
+</div>
+
+<div id="transferCodeDisplay"
+class="text-5xl font-bold text-center tracking-widest text-blue-900">
+</div>
+
+<div class="text-sm text-center text-gray-500 mt-3">
+Files auto-delete after 24 hours
+</div>
+
+<button onclick="copyCode()"
+class="mt-5 bg-blue-700 text-white px-5 py-3 rounded-xl w-full font-bold">
+Copy Code
+</button>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="card">
+
+<h2 class="text-2xl font-bold text-green-900 mb-5">
+Receive Documents
+</h2>
+
+<div class="space-y-4">
+
+<input id="receiveCode"
+class="input text-center text-3xl tracking-widest"
+placeholder="123456"
+maxlength="6">
+
+<button onclick="fetchFiles()"
+class="bg-green-700 text-white rounded-2xl p-4 w-full font-bold text-lg">
+Fetch Files
+</button>
+
+<div id="receiveStatus" class="text-sm text-gray-700"></div>
+
+<div id="downloadArea" class="space-y-3"></div>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="card mt-6">
+
+<div class="flex justify-between items-center mb-5">
+
+<h2 class="text-2xl font-bold text-purple-900">
+Recent Transfers
+</h2>
+
+<button onclick="clearHistory()"
+class="bg-red-600 text-white px-4 py-2 rounded-xl">
+Clear History
+</button>
+
+</div>
+
+<div id="historyArea" class="space-y-3"></div>
+
+</div>
+
+</div>
+
+<script>
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDjDw5V-itufoJCpyB-QLPPU9-h56VMqaE",
+  authDomain: "transfer-docs-anytime.firebaseapp.com",
+  projectId: "transfer-docs-anytime",
+  storageBucket: "transfer-docs-anytime.firebasestorage.app",
+  messagingSenderId: "52858508917",
+  appId: "1:52858508917:web:b3daf8f76aff16c5a04a3c"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+const auth = firebase.auth();
+
+auth.signInAnonymously()
+.then(()=>{
+console.log("Anonymous auth success");
+})
+.catch((error)=>{
+console.error("Auth error:", error);
+document.getElementById('uploadStatus').innerText =
+'Authentication failed: ' + error.message;
+});
+
+
+
+let transferHistory =
+JSON.parse(localStorage.getItem('transfer_history') || '[]');
+
+function generateCode(){
+return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function copyCode(){
+
+const code =
+document.getElementById('transferCodeDisplay').innerText;
+
+navigator.clipboard.writeText(code);
+
+alert('Code copied');
+
+}
+
+async function uploadFiles(){
+
+const files = document.getElementById('fileInput').files;
+
+if(files.length === 0){
+alert('Please select files');
+return;
+}
+
+const code = generateCode();
+
+const status =
+document.getElementById('uploadStatus');
+
+status.innerText = 'Uploading files...';
+
+const uploadedFiles = [];
+
+let completed = 0;
+
+try{
+
+for(const file of files){
+
+const ref =
+storage.ref(`transfers/${code}/${file.name}`);
+
+await ref.put(file);
+
+const url = await ref.getDownloadURL();
+
+uploadedFiles.push({
+name:file.name,
+url:url,
+path:`transfers/${code}/${file.name}`,
+size:file.size
+});
+
+completed++;
+
+const progress =
+(completed / files.length) * 100;
+
+document.getElementById('progressBar')
+.style.width = progress + '%';
+
+}
+
+await db.collection('transfers').doc(code).set({
+createdAt: Date.now(),
+expiry: Date.now() + 86400000,
+files: uploadedFiles
+});
+
+status.innerText = 'Upload successful — Multiple files uploaded successfully';
+
+document.getElementById('generatedCode')
+.classList.remove('hidden');
+
+document.getElementById('transferCodeDisplay')
+.innerText = code;
+
+transferHistory.unshift({
+code,
+date:new Date().toLocaleString(),
+files:uploadedFiles.length
+});
+
+saveHistory();
+renderHistory();
+
+}catch(err){
+
+console.error(err);
+
+status.innerText = 'Upload failed: ' + err.message;
+
+}
+
+}
+
+async function fetchFiles(){
+
+const code =
+document.getElementById('receiveCode')
+.value
+.trim();
+
+if(!code){
+alert('Enter transfer code');
+return;
+}
+
+const status =
+document.getElementById('receiveStatus');
+
+status.innerText =
+'Fetching files...';
+
+try{
+
+const doc =
+await db.collection('transfers')
+.doc(code)
+.get();
+
+if(!doc.exists){
+
+status.innerText =
+'Invalid transfer code';
+
+return;
+
+}
+
+const data = doc.data();
+
+if(Date.now() > data.expiry){
+
+status.innerText =
+'Transfer expired and deleted';
+
+await deleteTransfer(code, data);
+
+return;
+
+}
+
+const area =
+document.getElementById('downloadArea');
+
+area.innerHTML = '';
+
+for(const file of data.files){
+
+const div =
+document.createElement('div');
+
+const sizeMB =
+(file.size / (1024*1024))
+.toFixed(2);
+
+const preview =
+file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+? `<img src="${file.url}" class="w-40 rounded-xl mt-3">`
+: '';
+
+div.className =
+'bg-green-50 border border-green-200 rounded-2xl p-4';
+
+div.innerHTML = `
+
+<div class="font-bold text-green-900 text-lg">
+${file.name}
+</div>
+
+<div class="text-sm text-gray-600 mt-1">
+${sizeMB} MB
+</div>
+
+${preview}
+
+<a
+href="${file.url}"
+download
+class="inline-block mt-4 bg-green-700 text-white px-5 py-3 rounded-xl font-bold">
+Download
+</a>
+
+`;
+
+area.appendChild(div);
+
+}
+
+status.innerText =
+'Files fetched successfully';
+
+}catch(err){
+
+console.error(err);
+
+status.innerText =
+'Unable to fetch files';
+
+}
+
+}
+
+async function deleteTransfer(code, data){
+
+try{
+
+if(data.files){
+
+for(const file of data.files){
+
+if(file.path){
+
+await storage.ref(file.path).delete();
+
+}
+
+}
+
+}
+
+await db.collection('transfers')
+.doc(code)
+.delete();
+
+}catch(err){
+
+console.error(err);
+
+}
+
+}
+
+async function cleanupExpiredTransfers(){
+
+try{
+
+const snapshot =
+await db.collection('transfers').get();
+
+snapshot.forEach(async(doc)=>{
+
+const data = doc.data();
+
+if(Date.now() > data.expiry){
+
+await deleteTransfer(doc.id, data);
+
+}
+
+});
+
+}catch(err){
+
+console.error(err);
+
+}
+
+}
+
+function saveHistory(){
+
+localStorage.setItem(
+'transfer_history',
+JSON.stringify(transferHistory)
+);
+
+}
+
+function renderHistory(){
+
+const area =
+document.getElementById('historyArea');
+
+if(transferHistory.length === 0){
+
+area.innerHTML =
+'<div class="text-gray-500">No transfers yet</div>';
+
+return;
+
+}
+
+area.innerHTML = transferHistory.map(item=>`
+
+<div class="bg-purple-50 border border-purple-200 rounded-2xl p-4">
+
+<div class="font-bold text-purple-900">
+Code: ${item.code}
+</div>
+
+<div class="text-sm text-gray-600 mt-1">
+${item.date}
+</div>
+
+<div class="text-sm text-gray-600">
+Files: ${item.files}
+</div>
+
+</div>
+
+`).join('');
+
+}
+
+async function clearHistory(){
+
+if(!confirm('Clear history and expired transfers?')) return;
+
+transferHistory = [];
+
+saveHistory();
+
+renderHistory();
+
+await 
+
+function showSelectedFiles(files){
+
+const area =
+document.getElementById('selectedFiles');
+
+if(!files || files.length===0){
+
+area.innerHTML = '';
+
+return;
+
+}
+
+area.innerHTML = `
+<div class="font-bold text-blue-900">
+Selected Files (${files.length})
+</div>
+`;
+
+Array.from(files).forEach(file=>{
+
+const sizeMB =
+(file.size / (1024*1024)).toFixed(2);
+
+area.innerHTML += `
+<div class="bg-blue-50 border border-blue-200 rounded-xl p-3">
+${file.name} (${sizeMB} MB)
+</div>
+`;
+
+});
+
+}
+
+document.getElementById('fileInput')
+.addEventListener('change', e=>{
+
+showSelectedFiles(e.target.files);
+
+});
+
+
+cleanupExpiredTransfers();
+
+alert('History cleared');
+
+}
+
+const dropZone =
+document.getElementById('dropZone');
+
+dropZone.addEventListener('dragover', e=>{
+e.preventDefault();
+dropZone.classList.add('bg-blue-50');
+});
+
+dropZone.addEventListener('dragleave', ()=>{
+dropZone.classList.remove('bg-blue-50');
+});
+
+dropZone.addEventListener('drop', e=>{
+
+e.preventDefault();
+
+dropZone.classList.remove('bg-blue-50');
+
+
+const dt = new DataTransfer();
+
+Array.from(e.dataTransfer.files).forEach(file=>{
+dt.items.add(file);
+});
+
+document.getElementById('fileInput').files =
+dt.files;
+
+showSelectedFiles(dt.files);
+
+
+});
+
+
+
+function showSelectedFiles(files){
+
+const area =
+document.getElementById('selectedFiles');
+
+if(!files || files.length===0){
+
+area.innerHTML = '';
+
+return;
+
+}
+
+area.innerHTML = `
+<div class="font-bold text-blue-900">
+Selected Files (${files.length})
+</div>
+`;
+
+Array.from(files).forEach(file=>{
+
+const sizeMB =
+(file.size / (1024*1024)).toFixed(2);
+
+area.innerHTML += `
+<div class="bg-blue-50 border border-blue-200 rounded-xl p-3">
+${file.name} (${sizeMB} MB)
+</div>
+`;
+
+});
+
+}
+
+document.getElementById('fileInput')
+.addEventListener('change', e=>{
+
+showSelectedFiles(e.target.files);
+
+});
+
+
+cleanupExpiredTransfers();
+
+renderHistory();
+
+</script>
+
+</body>
+</html>
