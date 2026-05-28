@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TransferDocs Turbo</title>
+
+<link rel="icon" type="image/png" href="transferdocs.png">
+<link rel="apple-touch-icon" href="transferdocs.png">
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+
+body{
+background:linear-gradient(135deg,#eff6ff,#ede9fe,#fdf2f8);
+font-family:Arial,sans-serif;
+}
+
+.card{
+background:white;
+border-radius:28px;
+padding:24px;
+box-shadow:0 10px 30px rgba(0,0,0,0.08);
+}
+
+.dropzone{
+border:3px dashed #6366f1;
+padding:40px;
+border-radius:24px;
+text-align:center;
+background:#eef2ff;
+transition:0.3s;
+}
+
+.dropzone.drag{
+background:#ddd6fe;
+transform:scale(1.01);
+}
+
+</style>
+</head>
+
+<body class="p-5">
+
+<div class="max-w-5xl mx-auto">
+
+<div class="card mb-6 flex items-center gap-5">
+
+<img src="transferdocs.png"
+class="w-24 h-24 rounded-3xl">
+
+<div>
+<h1 class="text-4xl font-bold text-indigo-900">
+⚡ TransferDocs Turbo
+</h1>
+
+<p class="text-gray-600 mt-2">
+Ultra-fast personal file transfer system
+</p>
+</div>
+
+</div>
+
+<div class="card">
+
+<div id="dropzone"
+class="dropzone">
+
+<h2 class="text-3xl font-bold text-indigo-900">
+📁 Drop Files Here
+</h2>
+
+<p class="text-gray-600 mt-3">
+or select multiple files
+</p>
+
+<label class="inline-block mt-5 bg-indigo-700 text-white px-6 py-4 rounded-2xl font-bold cursor-pointer">
+Choose Files
+<input type="file"
+id="fileInput"
+multiple
+hidden>
+</label>
+
+</div>
+
+<div id="selectedFiles"
+class="mt-6 space-y-3"></div>
+
+<div class="mt-6">
+
+<button onclick="uploadFiles()"
+class="bg-green-700 text-white px-6 py-4 rounded-2xl font-bold">
+⚡ Upload Turbo
+</button>
+
+</div>
+
+<div class="mt-6">
+
+<div class="w-full bg-gray-200 rounded-full h-6 overflow-hidden">
+<div id="progressBar"
+class="bg-indigo-700 h-6 w-0 text-white text-sm text-center">
+</div>
+</div>
+
+<div id="uploadStatus"
+class="mt-4 font-bold text-indigo-900"></div>
+
+</div>
+
+</div>
+
+</div>
+
+<script>
+
+/* FIREBASE CONFIG */
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDjDw5V-itufoJCpyB-QLPPU9-h56VMqaE",
+  authDomain: "transfer-docs-anytime.firebaseapp.com",
+  projectId: "transfer-docs-anytime",
+  storageBucket: "transfer-docs-anytime.firebasestorage.app",
+  messagingSenderId: "52858508917",
+  appId: "1:52858508917:web:b3daf8f76aff16c5a04a3c"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const storage = firebase.storage();
+const db = firebase.firestore();
+
+firebase.auth().signInAnonymously()
+.then(()=>{
+console.log("Anonymous auth success");
+})
+.catch(err=>{
+console.error(err);
+});
+
+/* FILE PREVIEW */
+
+const fileInput =
+document.getElementById("fileInput");
+
+const selectedFiles =
+document.getElementById("selectedFiles");
+
+fileInput.addEventListener("change",()=>{
+
+showFiles(fileInput.files);
+
+});
+
+function showFiles(files){
+
+selectedFiles.innerHTML = "";
+
+Array.from(files).forEach(file=>{
+
+const size =
+(file.size/(1024*1024)).toFixed(2);
+
+selectedFiles.innerHTML += `
+<div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
+<b>${file.name}</b><br>
+${size} MB
+</div>
+`;
+
+});
+
+}
+
+/* DRAG DROP */
+
+const dropzone =
+document.getElementById("dropzone");
+
+dropzone.addEventListener("dragover",e=>{
+
+e.preventDefault();
+
+dropzone.classList.add("drag");
+
+});
+
+dropzone.addEventListener("dragleave",()=>{
+
+dropzone.classList.remove("drag");
+
+});
+
+dropzone.addEventListener("drop",e=>{
+
+e.preventDefault();
+
+dropzone.classList.remove("drag");
+
+const dt = new DataTransfer();
+
+Array.from(e.dataTransfer.files).forEach(file=>{
+dt.items.add(file);
+});
+
+fileInput.files = dt.files;
+
+showFiles(dt.files);
+
+});
+
+/* TURBO UPLOAD */
+
+async function uploadFiles(){
+
+const files = fileInput.files;
+
+if(!files.length){
+
+alert("Select files first");
+
+return;
+
+}
+
+const status =
+document.getElementById("uploadStatus");
+
+const progressBar =
+document.getElementById("progressBar");
+
+status.innerText =
+"Preparing turbo upload...";
+
+try{
+
+/* ZIP MULTIPLE FILES */
+
+let uploadBlob;
+let uploadName;
+
+if(files.length > 1){
+
+status.innerText =
+"Compressing files for faster upload...";
+
+const zip = new JSZip();
+
+Array.from(files).forEach(file=>{
+
+zip.file(file.name,file);
+
+});
+
+uploadBlob = await zip.generateAsync({
+type:"blob",
+compression:"DEFLATE",
+compressionOptions:{
+level:6
+}
+});
+
+uploadName =
+"transferdocs_bundle.zip";
+
+}else{
+
+uploadBlob = files[0];
+uploadName = files[0].name;
+
+}
+
+/* TRANSFER CODE */
+
+const code =
+Math.floor(
+100000 + Math.random()*900000
+).toString();
+
+const ref =
+storage.ref(
+`transfers/${code}/${uploadName}`
+);
+
+/* RESUMABLE FAST UPLOAD */
+
+const uploadTask =
+ref.put(uploadBlob);
+
+/* PROGRESS */
+
+uploadTask.on(
+"state_changed",
+
+(snapshot)=>{
+
+const progress =
+(snapshot.bytesTransferred /
+snapshot.totalBytes) * 100;
+
+progressBar.style.width =
+progress + "%";
+
+progressBar.innerText =
+Math.floor(progress) + "%";
+
+},
+
+(error)=>{
+
+console.error(error);
+
+status.innerText =
+"Upload failed: " + error.message;
+
+},
+
+async()=>{
+
+const url =
+await uploadTask.snapshot.ref.getDownloadURL();
+
+await db.collection("transfers")
+.doc(code)
+.set({
+
+downloadURL:url,
+filename:uploadName,
+createdAt:Date.now(),
+expiry:Date.now() + (24*60*60*1000)
+
+});
+
+status.innerHTML = `
+<div class="bg-green-100 border border-green-300 rounded-2xl p-5">
+✅ Upload Successful<br><br>
+Transfer Code:
+<div class="text-4xl font-bold text-green-800 mt-3">
+${code}
+</div>
+</div>
+`;
+
+}
+
+);
+
+}catch(err){
+
+console.error(err);
+
+status.innerText =
+"Upload failed: " + err.message;
+
+}
+
+}
+
+</script>
+
+</body>
+</html>
